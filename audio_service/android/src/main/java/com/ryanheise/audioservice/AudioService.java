@@ -84,16 +84,6 @@ public class AudioService extends MediaBrowserServiceCompat {
         AudioService.listener = listener;
     }
 
-    public static int toKeyCode(long action) {
-        if (action == PlaybackStateCompat.ACTION_PLAY) {
-            return KEYCODE_BYPASS_PLAY;
-        } else if (action == PlaybackStateCompat.ACTION_PAUSE) {
-            return KEYCODE_BYPASS_PAUSE;
-        } else {
-            return PlaybackStateCompat.toKeyCode(action);
-        }
-    }
-
     MediaMetadataCompat createMediaMetadata(String mediaId, String album, String title, String artist, String genre, Long duration, String artUri, Boolean playable, String displayTitle, String displaySubtitle, String displayDescription, RatingCompat rating, Map<?, ?> extras) {
         MediaMetadataCompat.Builder builder = new MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, mediaId)
@@ -203,8 +193,9 @@ public class AudioService extends MediaBrowserServiceCompat {
     private PowerManager.WakeLock wakeLock;
     private MediaSessionCompat mediaSession;
     private MediaSessionCallback mediaSessionCallback;
+    private NotificationReceiver notificationReceiver;
     private MediaMetadataCompat preparedMedia;
-    private List<NotificationCompat.Action> actions = new ArrayList<NotificationCompat.Action>();
+    private List<NotificationControl> controls;
     private int[] compactActionIndices;
     private MediaMetadataCompat mediaMetadata;
     private Object audioFocusRequest;
@@ -216,6 +207,7 @@ public class AudioService extends MediaBrowserServiceCompat {
     private int repeatMode;
     private int shuffleMode;
     private boolean notificationCreated;
+    private String notificationAction;
 
     public AudioProcessingState getProcessingState() {
         return processingState;
@@ -238,7 +230,8 @@ public class AudioService extends MediaBrowserServiceCompat {
         System.out.println("### onCreate");
         super.onCreate();
         instance = this;
-        notificationChannelId = getApplication().getPackageName() + ".channel";
+        String packageName = getApplication().getPackageName();
+        notificationChannelId = packageName + ".channel";
         config = new AudioServiceConfig(getApplicationContext());
 
         if (config.activityClassName != null) {
@@ -272,6 +265,12 @@ public class AudioService extends MediaBrowserServiceCompat {
         mediaSession.setCallback(mediaSessionCallback = new MediaSessionCallback());
         setSessionToken(mediaSession.getSessionToken());
         mediaSession.setQueue(queue);
+
+        notificationReceiver = new NotificationReceiver();
+        notificationAction = packageName + ".notification_action";
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(notificationAction);
+        registerReceiver(notificationReceiver, filter);
 
         PowerManager pm = (PowerManager)getSystemService(Context.POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, AudioService.class.getName());
@@ -319,10 +318,11 @@ public class AudioService extends MediaBrowserServiceCompat {
         queue.clear();
         queueIndex = -1;
         mediaMetadataCache.clear();
-        actions.clear();
         artBitmapCache.evictAll();
         compactActionIndices = null;
         releaseMediaSession();
+        unregisterReceiver(notificationReceiver);
+        controls = null;
         stopForeground(!config.androidResumeOnClick);
         // This still does not solve the Android 11 problem.
         // if (notificationCreated) {
@@ -332,6 +332,7 @@ public class AudioService extends MediaBrowserServiceCompat {
         releaseWakeLock();
         instance = null;
         notificationCreated = false;
+        notificationAction = null;
     }
 
     public void configure(AudioServiceConfig config) {
@@ -345,30 +346,59 @@ public class AudioService extends MediaBrowserServiceCompat {
         return getResources().getIdentifier(resourceName, resourceType, getApplicationContext().getPackageName());
     }
 
-    NotificationCompat.Action action(String resource, String label, long actionCode) {
-        int iconId = getResourceId(resource);
-        return new NotificationCompat.Action(iconId, label,
-                buildMediaButtonPendingIntent(actionCode));
+    /** Action extras:
+     *   -1 - delete notification
+     *   0-4 - notification button clicks
+     *   5 - for `setCancelButtonIntent` button, which is used only before Android Lollipop
+     */
+    private class NotificationReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action == null) return;
+            if (intent.getAction().equals(notificationAction)) {
+                int extra = intent.getIntExtra("index", -2);
+                if (extra == -2) return;
+                if (extra == -1) {
+                    if (listener == null) return;
+                    listener.onClose();
+                } else if (extra == 5) {
+                    mediaSessionCallback.onStop();
+                } else {
+                    listener.onNotificationAction(controls.get(extra).action);
+                }
+            }
+        }
     }
 
-    PendingIntent buildMediaButtonPendingIntent(long action) {
-        int keyCode = toKeyCode(action);
-        if (keyCode == KeyEvent.KEYCODE_UNKNOWN)
-            return null;
-        Intent intent = new Intent(this, MediaButtonReceiver.class);
-        intent.setAction(Intent.ACTION_MEDIA_BUTTON);
-        intent.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_DOWN, keyCode));
-        return PendingIntent.getBroadcast(this, keyCode, intent, 0);
+    private PendingIntent buildPendingNotificationIntent(int actionIndex) {
+        Intent intent = new Intent(notificationAction).putExtra("index", actionIndex);
+        return PendingIntent.getBroadcast(
+                AudioService.instance, actionIndex, intent, PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
-    PendingIntent buildDeletePendingIntent() {
-        Intent intent = new Intent(this, MediaButtonReceiver.class);
-        intent.setAction(MediaButtonReceiver.ACTION_NOTIFICATION_DELETE);
-        return PendingIntent.getBroadcast(this, 0, intent, 0);
+    public static class NotificationControl {
+        public NotificationControl(String resource, String label, String action) {
+            this.resource = resource;
+            this.label = label;
+            this.action = action;
+        }
+        String resource;
+        String label;
+        String action;
+        private NotificationCompat.Action notificationAction;
     }
 
-    void setState(List<NotificationCompat.Action> actions, int actionBits, int[] compactActionIndices, AudioProcessingState processingState, boolean playing, long position, long bufferedPosition, float speed, long updateTime, Integer errorCode, String errorMessage, int repeatMode, int shuffleMode, boolean captioningEnabled, Long queueIndex) {
-        this.actions = actions;
+    void setState(List<NotificationControl> controls, int actionBits, int[] compactActionIndices, AudioProcessingState processingState, boolean playing, long position, long bufferedPosition, float speed, long updateTime, Integer errorCode, String errorMessage, int repeatMode, int shuffleMode, boolean captioningEnabled, Long queueIndex) {
+        for (int i = 0; i < controls.size(); i++) {
+            NotificationControl control = controls.get(i);
+            int iconId = getResourceId(control.resource);
+            control.notificationAction = new NotificationCompat.Action(
+                    iconId,
+                    control.label,
+                    buildPendingNotificationIntent(i));
+        }
+        this.controls = controls;
         this.compactActionIndices = compactActionIndices;
         boolean wasPlaying = this.playing;
         AudioProcessingState oldProcessingState = this.processingState;
@@ -450,7 +480,7 @@ public class AudioService extends MediaBrowserServiceCompat {
     private Notification buildNotification() {
         int[] compactActionIndices = this.compactActionIndices;
         if (compactActionIndices == null) {
-            compactActionIndices = new int[Math.min(MAX_COMPACT_ACTIONS, actions.size())];
+            compactActionIndices = new int[Math.min(MAX_COMPACT_ACTIONS, controls.size())];
             for (int i = 0; i < compactActionIndices.length; i++) compactActionIndices[i] = i;
         }
         NotificationCompat.Builder builder = getNotificationBuilder();
@@ -469,15 +499,15 @@ public class AudioService extends MediaBrowserServiceCompat {
             builder.setContentIntent(mediaSession.getController().getSessionActivity());
         if (config.notificationColor != -1)
             builder.setColor(config.notificationColor);
-        for (NotificationCompat.Action action : actions) {
-            builder.addAction(action);
+        for (NotificationControl control : controls) {
+            builder.addAction(control.notificationAction);
         }
         final MediaStyle style = new MediaStyle()
             .setMediaSession(mediaSession.getSessionToken())
             .setShowActionsInCompactView(compactActionIndices);
         if (config.androidNotificationOngoing) {
             style.setShowCancelButton(true);
-            style.setCancelButtonIntent(buildMediaButtonPendingIntent(PlaybackStateCompat.ACTION_STOP));
+            style.setCancelButtonIntent(buildPendingNotificationIntent(5));
             builder.setOngoing(true);
         }
         builder.setStyle(style);
@@ -486,26 +516,17 @@ public class AudioService extends MediaBrowserServiceCompat {
     }
 
     private NotificationCompat.Builder getNotificationBuilder() {
-        NotificationCompat.Builder notificationBuilder = null;
-        if (notificationBuilder == null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                createChannel();
-            int iconId = getResourceId(config.androidNotificationIcon);
-            notificationBuilder = new NotificationCompat.Builder(this, notificationChannelId)
-                    .setSmallIcon(iconId)
-                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                    .setShowWhen(false)
-                    .setDeleteIntent(buildDeletePendingIntent())
-            ;
-        }
+        NotificationCompat.Builder notificationBuilder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            createChannel();
+        int iconId = getResourceId(config.androidNotificationIcon);
+        notificationBuilder = new NotificationCompat.Builder(this, notificationChannelId)
+                .setSmallIcon(iconId)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setShowWhen(false)
+                .setDeleteIntent(buildPendingNotificationIntent(-1));
         return notificationBuilder;
     }
-
-    public void handleDeleteNotification() {
-        if (listener == null) return;
-        listener.onClose();
-    }
-
 
     @RequiresApi(Build.VERSION_CODES.O)
     private void createChannel() {
@@ -945,11 +966,9 @@ public class AudioService extends MediaBrowserServiceCompat {
         //
 
         void onPlayMediaItem(MediaMetadataCompat metadata);
-
         void onTaskRemoved();
-
+        void onNotificationAction(String action);
         void onClose();
-
         void onDestroy();
     }
 }

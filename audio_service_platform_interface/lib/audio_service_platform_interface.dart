@@ -185,6 +185,9 @@ abstract class AudioHandlerCallbacks {
   /// Handle the task being swiped away in the task manager (Android).
   Future<void> onTaskRemoved(OnTaskRemovedRequest request);
 
+  /// Handle the notification action click.
+  Future<void> onNotificationAction(OnNotificationActionRequest request);
+
   /// Handle the notification being swiped away (Android).
   Future<void> onNotificationDeleted(OnNotificationDeletedRequest request);
 
@@ -263,14 +266,14 @@ enum MediaActionMessage {
 
 class MediaControlMessage {
   /// A reference to an Android icon resource for the control (e.g.
-  /// `"drawable/ic_action_pause"`)
+  /// `"drawable/ic_action_pause"`).
   final String androidIcon;
 
-  /// A label for the control
+  /// A label for the control.
   final String label;
 
-  /// The action to be executed by this control
-  final MediaActionMessage action;
+  /// The action to be executed by this control.
+  final String action;
 
   @literal
   const MediaControlMessage({
@@ -282,7 +285,7 @@ class MediaControlMessage {
   Map<String, dynamic> toMap() => {
         'androidIcon': androidIcon,
         'label': label,
-        'action': action.index,
+        'action': action,
       };
 }
 
@@ -1259,6 +1262,15 @@ class OnTaskRemovedRequest {
   const OnTaskRemovedRequest();
 
   Map<String, dynamic> toMap() => {};
+}
+
+class OnNotificationActionRequest {
+  final String action;
+
+  @literal
+  const OnNotificationActionRequest({required this.action});
+
+  Map<String, dynamic> toMap() => {'action': action};
 }
 
 class OnNotificationDeletedRequest {

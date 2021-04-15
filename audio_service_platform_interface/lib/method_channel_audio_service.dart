@@ -247,6 +247,9 @@ class MethodChannelAudioService extends AudioServicePlatform {
         case 'onTaskRemoved':
           await callbacks.onTaskRemoved(const OnTaskRemovedRequest());
           return null;
+        case 'onNotificationAction':
+          await callbacks.onNotificationAction(OnNotificationActionRequest(action: call.arguments['action']));
+          return null;
         case 'onNotificationDeleted':
           await callbacks.onNotificationDeleted(const OnNotificationDeletedRequest());
           return null;

@@ -15,8 +15,8 @@ dependencies:
   # Use these deps when pushing to origin (for the benefit of testers)
   audio_service_platform_interface:
     git:
-      url: https://github.com/ryanheise/audio_service.git
-      ref: one-isolate
+      url: https://github.com/nt4f04und/audio_service.git
+      ref: sweyer
       path: audio_service_platform_interface
 
   # Use these deps when publishing.

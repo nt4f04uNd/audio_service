@@ -768,6 +768,11 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
         }
 
         @Override
+        public void onNotificationAction(String action) {
+            invokeMethod("onNotificationAction", mapOf("action", action));
+        }
+
+        @Override
         public void onClose() {
             invokeMethod("onNotificationDeleted", mapOf());
         }
@@ -819,13 +824,16 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
                 // On the native side, we must represent the update time relative to the boot time.
                 long updateTimeSinceBoot = updateTimeSinceEpoch - bootTime;
 
-                List<NotificationCompat.Action> actions = new ArrayList<NotificationCompat.Action>();
+                List<AudioService.NotificationControl> controls = new ArrayList<>();
                 int actionBits = 0;
                 for (Map<?, ?> rawControl : rawControls) {
                     String resource = (String)rawControl.get("androidIcon");
-                    int actionCode = 1 << ((Integer)rawControl.get("action"));
-                    actionBits |= actionCode;
-                    actions.add(AudioService.instance.action(resource, (String)rawControl.get("label"), actionCode));
+                    String action = (String)rawControl.get("action");
+                    controls.add(new AudioService.NotificationControl(
+                        resource,
+                        (String)rawControl.get("label"),
+                        action
+                    ));
                 }
                 for (Integer rawSystemAction : rawSystemActions) {
                     int actionCode = 1 << rawSystemAction;
@@ -838,7 +846,7 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
                         compactActionIndices[i] = (Integer)compactActionIndexList.get(i);
                 }
                 AudioService.instance.setState(
-                        actions,
+                        controls,
                         actionBits,
                         compactActionIndices,
                         processingState,

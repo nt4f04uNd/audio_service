@@ -579,6 +579,12 @@ class LoggingAudioHandler extends CompositeAudioHandler {
   }
 
   @override
+  Future<void> onNotificationAction(String action) {
+    _log('onNotificationAction()');
+    return super.onNotificationAction(action);
+  }
+
+  @override
   Future<void> onNotificationDeleted() {
     _log('onNotificationDeleted()');
     return super.onNotificationDeleted();

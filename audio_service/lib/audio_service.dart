@@ -550,68 +550,67 @@ class MediaItem {
 /// drawable-xxxhdpi
 /// ```
 ///
-/// You can use [Android Asset
-/// Studio](https://romannurik.github.io/AndroidAssetStudio/) to generate these
-/// different subdirectories for any standard material design icon.
+/// You can use [Android Asset Studio](https://romannurik.github.io/AndroidAssetStudio/)
+/// to generate these different subdirectories for any standard material design icon.
 class MediaControl {
   /// A default control for [MediaAction.stop].
   static final stop = MediaControl(
     androidIcon: 'drawable/audio_service_stop',
     label: 'Stop',
-    action: MediaAction.stop,
+    action: 'stop',
   );
 
   /// A default control for [MediaAction.pause].
   static final pause = MediaControl(
     androidIcon: 'drawable/audio_service_pause',
     label: 'Pause',
-    action: MediaAction.pause,
+    action: 'pause',
   );
 
   /// A default control for [MediaAction.play].
   static final play = MediaControl(
     androidIcon: 'drawable/audio_service_play_arrow',
     label: 'Play',
-    action: MediaAction.play,
+    action: 'play',
   );
 
   /// A default control for [MediaAction.rewind].
   static final rewind = MediaControl(
     androidIcon: 'drawable/audio_service_fast_rewind',
     label: 'Rewind',
-    action: MediaAction.rewind,
+    action: 'rewind',
   );
 
   /// A default control for [MediaAction.skipToNext].
   static final skipToNext = MediaControl(
     androidIcon: 'drawable/audio_service_skip_next',
     label: 'Next',
-    action: MediaAction.skipToNext,
+    action: 'skipToNext',
   );
 
   /// A default control for [MediaAction.skipToPrevious].
   static final skipToPrevious = MediaControl(
     androidIcon: 'drawable/audio_service_skip_previous',
     label: 'Previous',
-    action: MediaAction.skipToPrevious,
+    action: 'skipToPrevious',
   );
 
   /// A default control for [MediaAction.fastForward].
   static final fastForward = MediaControl(
     androidIcon: 'drawable/audio_service_fast_forward',
     label: 'Fast Forward',
-    action: MediaAction.fastForward,
+    action: 'fastForward',
   );
 
   /// A reference to an Android icon resource for the control (e.g.
-  /// `"drawable/ic_action_pause"`)
+  /// `"drawable/ic_action_pause"`).
   final String androidIcon;
 
-  /// A label for the control
+  /// A label for the control.
   final String label;
 
-  /// The action to be executed by this control
-  final MediaAction action;
+  /// The action to be executed by this control.
+  final String action;
 
   const MediaControl({
     required this.androidIcon,
@@ -622,7 +621,7 @@ class MediaControl {
   MediaControlMessage _toMessage() => MediaControlMessage(
         androidIcon: androidIcon,
         label: label,
-        action: MediaActionMessage.values[action.index],
+        action: action,
       );
 
   @override
@@ -845,6 +844,10 @@ class AudioService {
             break;
           case 'onTaskRemoved':
             await _handler.onTaskRemoved();
+            request.sendPort.send(null);
+            break;
+          case 'onNotificationAction':
+            await _handler.onNotificationAction(request.arguments![0]);
             request.sendPort.send(null);
             break;
           case 'onNotificationDeleted':
@@ -1630,6 +1633,8 @@ abstract class AudioHandler {
   /// Handle the task being swiped away in the task manager (Android).
   Future<void> onTaskRemoved();
 
+  Future<void> onNotificationAction(String action);
+
   /// Handle the notification being swiped away (Android).
   Future<void> onNotificationDeleted();
 
@@ -1924,6 +1929,11 @@ class CompositeAudioHandler extends AudioHandler {
 
   @override
   @mustCallSuper
+  Future<void> onNotificationAction(String action) =>
+      _inner.onNotificationAction(action);
+
+  @override
+  @mustCallSuper
   Future<void> onNotificationDeleted() => _inner.onNotificationDeleted();
 
   @override
@@ -2162,6 +2172,10 @@ class _IsolateAudioHandler extends AudioHandler {
 
   @override
   Future<void> onTaskRemoved() => _send('onTaskRemoved');
+
+  @override
+  Future<void> onNotificationAction(String action) =>
+      _send('onNotificationAction', [action]);
 
   @override
   Future<void> onNotificationDeleted() => _send('onNotificationDeleted');
@@ -2479,6 +2493,11 @@ class BaseAudioHandler extends AudioHandler {
 
   @override
   Future<void> onTaskRemoved() async {}
+
+  @override
+  Future<void> onNotificationAction(String action) async {
+    print(action);
+  }
 
   @override
   Future<void> onNotificationDeleted() async {
@@ -3167,6 +3186,10 @@ class _HandlerCallbacks extends AudioHandlerCallbacks {
       OnNotificationClickedRequest request) async {
     AudioService._notificationClickEvent.add(request.clicked);
   }
+
+  @override
+  Future<void> onNotificationAction(OnNotificationActionRequest request) =>
+      handler.onNotificationAction(request.action);
 
   @override
   Future<void> onNotificationDeleted(OnNotificationDeletedRequest request) =>
