@@ -404,6 +404,12 @@ class MediaItem {
   /// A unique id.
   final String id;
 
+  /// Media item uri.
+  final String? uri;
+
+  /// Color to blend into default album art.
+  final int? defaultArtBlendColor;
+
   /// The album this media item belongs to.
   final String album;
 
@@ -447,6 +453,8 @@ class MediaItem {
   /// The [id] must be unique for each instance.
   const MediaItem({
     required this.id,
+    this.uri,
+    this.defaultArtBlendColor,
     required this.album,
     required this.title,
     this.artist,
@@ -465,6 +473,8 @@ class MediaItem {
   /// new values.
   MediaItem copyWith({
     String? id,
+    String? uri,
+    int? defaultArtBlendColor,
     String? album,
     String? title,
     String? artist,
@@ -480,6 +490,8 @@ class MediaItem {
   }) =>
       MediaItem(
         id: id ?? this.id,
+        uri: uri ?? this.uri,
+        defaultArtBlendColor: defaultArtBlendColor ?? this.defaultArtBlendColor,
         album: album ?? this.album,
         title: title ?? this.title,
         artist: artist ?? this.artist,
@@ -502,6 +514,8 @@ class MediaItem {
 
   MediaItemMessage _toMessage() => MediaItemMessage(
         id: id,
+        uri: uri,
+        defaultArtBlendColor: defaultArtBlendColor,
         album: album,
         title: title,
         artist: artist,
@@ -2884,6 +2898,8 @@ extension AudioServiceValueStream<T> on ValueStream<T> {
 extension MediaItemMessageExtension on MediaItemMessage {
   MediaItem toPlugin() => MediaItem(
         id: id,
+        uri: uri,
+        defaultArtBlendColor: defaultArtBlendColor,
         album: album,
         title: title,
         artist: artist,

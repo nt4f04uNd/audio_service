@@ -10,11 +10,18 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.ColorFilter;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.media.MediaMetadataRetriever;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -37,6 +44,8 @@ import androidx.media.MediaBrowserServiceCompat.BrowserRoot;
 import androidx.media.VolumeProviderCompat;
 import androidx.media.app.NotificationCompat.MediaStyle;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,10 +53,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import io.flutter.FlutterInjector;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.embedding.engine.FlutterEngineCache;
 import android.net.Uri;
 import io.flutter.embedding.engine.dart.DartExecutor;
+import io.flutter.embedding.engine.loader.FlutterLoader;
+import io.flutter.view.FlutterMain;
 
 public class AudioService extends MediaBrowserServiceCompat {
     public static final String CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED";
@@ -79,16 +91,35 @@ public class AudioService extends MediaBrowserServiceCompat {
     private static int queueIndex = -1;
     private static Map<String, MediaMetadataCompat> mediaMetadataCache = new HashMap<>();
     private static Set<String> artUriBlacklist = new HashSet<>();
+    private static Long defaultArtBlendColor;
 
     public static void init(ServiceListener listener) {
         AudioService.listener = listener;
     }
 
-    MediaMetadataCompat createMediaMetadata(String mediaId, String album, String title, String artist, String genre, Long duration, String artUri, Boolean playable, String displayTitle, String displaySubtitle, String displayDescription, RatingCompat rating, Map<?, ?> extras) {
+    MediaMetadataCompat createMediaMetadata(String mediaId,
+                                            String mediaUri,
+                                            boolean loadArt,
+                                            Long defaultArtBlendColor,
+                                            String album,
+                                            String title,
+                                            String artist,
+                                            String genre,
+                                            Long duration,
+                                            String artUri,
+                                            Boolean playable,
+                                            String displayTitle,
+                                            String displaySubtitle,
+                                            String displayDescription,
+                                            RatingCompat rating,
+                                            Map<?, ?> extras) {
+        this.defaultArtBlendColor = defaultArtBlendColor;
         MediaMetadataCompat.Builder builder = new MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, mediaId)
                 .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title);
+        if (mediaUri != null)
+            builder.putString(MediaMetadataCompat.METADATA_KEY_MEDIA_URI, mediaUri);
         if (artist != null)
             builder.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist);
         if (genre != null)
@@ -96,18 +127,43 @@ public class AudioService extends MediaBrowserServiceCompat {
         if (duration != null)
             builder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration);
         if (artUri != null) {
+            builder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, artUri);
+            builder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artUri);
             builder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artUri);
-            String artCacheFilePath = null;
-            if (extras != null) {
-                artCacheFilePath = (String)extras.get("artCacheFile");
-            }
-            if (artCacheFilePath != null) {
-                Bitmap bitmap = loadArtBitmapFromFile(artCacheFilePath);
-                if (bitmap != null) {
-                    builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap);
-                    builder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, bitmap);
+        }
+        if (loadArt) {
+            Bitmap bitmap = null;
+            if (artUri != null) {
+                String artCacheFilePath = null;
+                if (extras != null) {
+                    artCacheFilePath = (String) extras.get("artCacheFile");
+                }
+                if (artCacheFilePath != null) {
+                    bitmap = loadArtBitmapFromFile(artCacheFilePath);
+                }
+            } else if (mediaUri != null) {
+                try {
+                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                    retriever.setDataSource(getApplicationContext(), Uri.parse(mediaUri));
+                    byte[] bytes = retriever.getEmbeddedPicture();
+                    if (bytes != null) {
+                        BitmapFactory.Options options = new BitmapFactory.Options();
+                        options.outWidth = 192;
+                        options.outHeight = 192;
+                        bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+                    }
+                    retriever.release();
+                } catch (IllegalArgumentException ex) {
+                    ex.printStackTrace();
+                    // Catch when the content by specified path doesn't exist
                 }
             }
+            if (bitmap == null) {
+                bitmap = loadDefaultAlbumArt(false, defaultArtBlendColor);
+                loadDefaultAlbumArt(true, defaultArtBlendColor);
+            }
+            builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap);
+            builder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, bitmap);
         }
         if (playable != null)
             builder.putLong("playable_long", playable ? 1 : 0);
@@ -144,6 +200,40 @@ public class AudioService extends MediaBrowserServiceCompat {
 
     static MediaMetadataCompat getMediaMetadata(String mediaId) {
         return mediaMetadataCache.get(mediaId);
+    }
+
+    Bitmap loadDefaultAlbumArt(boolean forNotification, Long defaultArtBlendColor) {
+        String cacheKey = forNotification ? "default_for_notification" : "default";
+        Bitmap defaultBitmap = artBitmapCache.get(cacheKey);
+            if (defaultBitmap == null && defaultArtBlendColor == null) {
+                return defaultBitmap;
+            } else {
+                try {
+                    AssetManager assetManager = getAssets();
+                    String key = FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(
+                            forNotification ? "assets/images/logo_mask_thumb_notification.png"
+                                            : "assets/images/logo_mask.png");
+                    InputStream inputStream = assetManager.open(key);
+                    Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
+                    if (defaultArtBlendColor == null)
+                        defaultArtBlendColor = 4286336511L;
+                    // Canvas can accept only mutable bitmaps
+                    bitmap = bitmap.copy(bitmap.getConfig(), true);
+
+                    // Applying color
+                    // https://stackoverflow.com/a/31970565/9710294
+                    Paint paint = new Paint();
+                    ColorFilter filter = new PorterDuffColorFilter(defaultArtBlendColor.intValue(), PorterDuff.Mode.ADD);
+                    paint.setColorFilter(filter);
+                    Canvas canvas = new Canvas(bitmap);
+                    canvas.drawBitmap(bitmap, 0, 0, paint);
+                    artBitmapCache.put(cacheKey, bitmap);
+                    return bitmap;
+                } catch (Exception ex) {
+                    System.out.println("Failed to load default album art");
+                    return null;
+            }
+        }
     }
 
     Bitmap loadArtBitmapFromFile(String path) {
@@ -492,8 +582,13 @@ public class AudioService extends MediaBrowserServiceCompat {
                 builder.setContentText(description.getSubtitle());
             if (description.getDescription() != null)
                 builder.setSubText(description.getDescription());
-            if (description.getIconBitmap() != null)
-                builder.setLargeIcon(description.getIconBitmap());
+            Bitmap bitmap = description.getIconBitmap();
+            if (bitmap != null) {
+                if (bitmap == artBitmapCache.get("default")) {
+                    bitmap = loadDefaultAlbumArt(true, defaultArtBlendColor);
+                }
+                builder.setLargeIcon(bitmap);
+            }
         }
         if (config.androidNotificationClickStartsActivity)
             builder.setContentIntent(mediaSession.getController().getSessionActivity());

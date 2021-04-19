@@ -557,6 +557,12 @@ class MediaItemMessage {
   /// A unique id.
   final String id;
 
+  /// Media item uri.
+  final String? uri;
+
+  /// Color to blend into default album art.
+  final int? defaultArtBlendColor;
+
   /// The album this media item belongs to.
   final String album;
 
@@ -601,6 +607,8 @@ class MediaItemMessage {
   @literal
   const MediaItemMessage({
     required this.id,
+    this.uri,
+    this.defaultArtBlendColor,
     required this.album,
     required this.title,
     this.artist,
@@ -619,6 +627,8 @@ class MediaItemMessage {
   /// fields of this class.
   factory MediaItemMessage.fromMap(Map raw) => MediaItemMessage(
         id: raw['id'],
+        uri: raw['uri'],
+        defaultArtBlendColor: raw['defaultArtBlendColor'],
         album: raw['album'],
         title: raw['title'],
         artist: raw['artist'],
@@ -640,6 +650,8 @@ class MediaItemMessage {
   /// the fields of this class.
   Map<String, dynamic> toMap() => {
         'id': id,
+        'uri': uri,
+        'defaultArtBlendColor': defaultArtBlendColor,
         'album': album,
         'title': title,
         'artist': artist,
