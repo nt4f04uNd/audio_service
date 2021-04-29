@@ -564,7 +564,7 @@ class MediaItemMessage {
   final int? defaultArtBlendColor;
 
   /// The album this media item belongs to.
-  final String album;
+  final String? album;
 
   /// The title of this media item.
   final String title;
