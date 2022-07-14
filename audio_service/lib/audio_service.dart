@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 
@@ -11,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:android_content_provider/android_content_provider.dart';
+import 'dart:io' if (dart.library.html) '';
 
 AudioServicePlatform _platform = AudioServicePlatform.instance;
 
@@ -657,14 +658,14 @@ class MediaItem {
   bool operator ==(Object other) =>
       other.runtimeType == runtimeType && other is MediaItem && other.id == id;
 
-  MediaItemMessage _toMessage() => MediaItemMessage(
+  MediaItemMessage _toMessage({Uri? artUri}) => MediaItemMessage(
         id: id,
         album: album,
         title: title,
         artist: artist,
         genre: genre,
         duration: duration,
-        artUri: artUri,
+        artUri: artUri ?? this.artUri,
         playable: playable,
         displayTitle: displayTitle,
         displaySubtitle: displaySubtitle,
@@ -876,8 +877,17 @@ class MediaControl {
 class AudioService {
   /// The cache to use when loading artwork.
   /// Defaults to [DefaultCacheManager].
+  @Deprecated(
+    "Save the cache manager instance somewhere in your code. "
+    "Starting from the version 0.19.0, if the ArtContentProvider was setup, aside from this cache manager, "
+    "the plugin might instead use the one passed to its constructor, when running on Android (non-web). "
+    "To avoid additional confusion, it was decided to deprecate and then remove this getter."
+    "That said, you still will be able to configure the cache manager in both cases.",
+  )
   static BaseCacheManager get cacheManager => _cacheManager!;
   static BaseCacheManager? _cacheManager;
+
+  static _ArtProviderBinding? _artProviderBinding;
 
   static late AudioServiceConfig _config;
   static late AudioHandler _handler;
@@ -925,7 +935,8 @@ class AudioService {
     assert(config.rewindInterval > Duration.zero);
     WidgetsFlutterBinding.ensureInitialized();
     _cacheManager = (cacheManager ??= DefaultCacheManager());
-    final callbacks = _HandlerCallbacks();
+    _artProviderBinding = _ArtProviderBinding(cacheManager);
+    final callbacks = _HandlerCallbacks(_artProviderBinding!);
     _platform.setHandlerCallbacks(callbacks);
     await _platform.configure(ConfigureRequest(config: config._toMessage()));
     _config = config;
@@ -942,8 +953,10 @@ class AudioService {
   }
 
   static Future<void> _observeMediaItem() async {
-    await for (var mediaItem in _handler.mediaItem) {
+    await for (final mediaItem in _handler.mediaItem) {
       if (mediaItem == null) continue;
+      var platformMediaItem =
+          await _artProviderBinding!.prepareForPlatform(mediaItem);
       final artUri = mediaItem.artUri;
       if (artUri == null || artUri.scheme == 'content') {
         await _platform.setMediaItem(
@@ -954,16 +967,17 @@ class AudioService {
         if (artUri.scheme == 'file') {
           filePath = artUri.toFilePath();
         } else {
-          final fileInfo =
-              await cacheManager.getFileFromMemory(artUri.toString());
-          filePath = fileInfo?.file.path;
+          filePath = await _artProviderBinding!.loadArtworkFromMemory(artUri);
           if (filePath == null) {
             // We haven't fetched the art yet, so show the metadata now, and again
             // after we load the art.
             await _platform.setMediaItem(
-                SetMediaItemRequest(mediaItem: mediaItem._toMessage()));
+                SetMediaItemRequest(mediaItem: platformMediaItem._toMessage()));
             // Load the art
-            filePath = await _loadArtwork(mediaItem);
+            filePath = await _artProviderBinding!.loadArtwork(
+              mediaItem.artUri!,
+              mediaItem.artHeaders,
+            );
             // If we failed to download the art, abort.
             if (filePath == null) continue;
             if (File(filePath).lengthSync() == 0) continue;
@@ -975,7 +989,7 @@ class AudioService {
         final extras =
             Map<String, dynamic>.of(mediaItem.extras ?? <String, dynamic>{});
         extras['artCacheFile'] = filePath;
-        final platformMediaItem = mediaItem.copyWith(extras: extras);
+        platformMediaItem = platformMediaItem.copyWith(extras: extras);
         // Show the media item after the art is loaded.
         await _platform.setMediaItem(
             SetMediaItemRequest(mediaItem: platformMediaItem._toMessage()));
@@ -992,12 +1006,23 @@ class AudioService {
   }
 
   static Future<void> _observeQueue() async {
+    Future<void> _loadAllArtworks(List<MediaItem> queue) async {
+      for (var mediaItem in queue) {
+        final uri = mediaItem.artUri;
+        final headers = mediaItem.artHeaders;
+        if (uri != null) {
+          await _artProviderBinding!.loadArtwork(uri, headers);
+        }
+      }
+    }
+
     await for (var queue in _handler.queue) {
       if (_config.preloadArtwork) {
-        _loadAllArtwork(queue);
+        _loadAllArtworks(queue);
       }
-      await _platform.setQueue(SetQueueRequest(
-          queue: queue.map((item) => item._toMessage()).toList()));
+      final platformQueue =
+          await _artProviderBinding!.convertListForPlatform(queue);
+      await _platform.setQueue(SetQueueRequest(queue: platformQueue));
     }
   }
 
@@ -1106,35 +1131,6 @@ class AudioService {
   /// Stops the service.
   static Future<void> _stop() async {
     await _platform.stopService(const StopServiceRequest());
-  }
-
-  static Future<void> _loadAllArtwork(List<MediaItem> queue) async {
-    for (var mediaItem in queue) {
-      await _loadArtwork(mediaItem);
-    }
-  }
-
-  static Future<String?> _loadArtwork(MediaItem mediaItem) async {
-    try {
-      final artUri = mediaItem.artUri;
-      if (artUri != null) {
-        if (artUri.scheme == 'file') {
-          return artUri.toFilePath();
-        } else {
-          final headers = mediaItem.artHeaders;
-          final file = headers != null
-              ? await cacheManager.getSingleFile(mediaItem.artUri!.toString(),
-                  headers: headers)
-              : await cacheManager.getSingleFile(mediaItem.artUri!.toString());
-          return file.path;
-        }
-      }
-    } catch (e, st) {
-      // TODO: handle this somehow?
-      // ignore: avoid_print
-      print('Error loading artUri: $e\n$st');
-    }
-    return null;
   }
 
   // DEPRECATED members
@@ -3469,14 +3465,14 @@ extension AudioServiceValueStream<T> on ValueStream<T> {
 }
 
 extension _MediaItemMessageExtension on MediaItemMessage {
-  MediaItem toPlugin() => MediaItem(
+  MediaItem toPlugin({Uri? artUri}) => MediaItem(
         id: id,
         album: album,
         title: title,
         artist: artist,
         genre: genre,
         duration: duration,
-        artUri: artUri,
+        artUri: artUri ?? this.artUri,
         playable: playable,
         displayTitle: displayTitle,
         displaySubtitle: displaySubtitle,
@@ -3713,6 +3709,10 @@ class AudioServiceBackground {
 }
 
 class _HandlerCallbacks extends AudioHandlerCallbacks {
+  final _ArtProviderBinding artProviderBinding;
+
+  _HandlerCallbacks(this.artProviderBinding);
+
   final _handlerCompleter = Completer<AudioHandler>();
 
   Future<AudioHandler> get handlerFuture => _handlerCompleter.future;
@@ -3721,7 +3721,8 @@ class _HandlerCallbacks extends AudioHandlerCallbacks {
 
   @override
   Future<void> addQueueItem(AddQueueItemRequest request) async =>
-      (await handlerFuture).addQueueItem(request.mediaItem.toPlugin());
+      (await handlerFuture).addQueueItem(
+          await artProviderBinding.convertForDart(request.mediaItem));
 
   @override
   Future<void> androidAdjustRemoteVolume(
@@ -3752,20 +3753,22 @@ class _HandlerCallbacks extends AudioHandlerCallbacks {
     final mediaItems =
         await _onLoadChildren(request.parentMediaId, request.options);
     return GetChildrenResponse(
-        children: mediaItems.map((item) => item._toMessage()).toList());
+        children: await artProviderBinding.convertListForPlatform(mediaItems));
   }
 
   @override
   Future<GetMediaItemResponse> getMediaItem(GetMediaItemRequest request) async {
+    final mediaItem = await (await handlerFuture).getMediaItem(request.mediaId);
     return GetMediaItemResponse(
-        mediaItem: (await (await handlerFuture).getMediaItem(request.mediaId))
-            ?._toMessage());
+        mediaItem: mediaItem == null
+            ? null
+            : await artProviderBinding.convertForPlatform(mediaItem));
   }
 
   @override
   Future<void> insertQueueItem(InsertQueueItemRequest request) async =>
-      (await handlerFuture)
-          .insertQueueItem(request.index, request.mediaItem.toPlugin());
+      (await handlerFuture).insertQueueItem(request.index,
+          await artProviderBinding.convertForDart(request.mediaItem));
 
   @override
   Future<void> onNotificationClicked(
@@ -3803,7 +3806,8 @@ class _HandlerCallbacks extends AudioHandlerCallbacks {
 
   @override
   Future<void> playMediaItem(PlayMediaItemRequest request) async =>
-      (await handlerFuture).playMediaItem(request.mediaItem.toPlugin());
+      (await handlerFuture).playMediaItem(
+          await artProviderBinding.convertForDart(request.mediaItem));
 
   @override
   Future<void> prepare(PrepareRequest request) async =>
@@ -3823,7 +3827,8 @@ class _HandlerCallbacks extends AudioHandlerCallbacks {
 
   @override
   Future<void> removeQueueItem(RemoveQueueItemRequest request) async =>
-      (await handlerFuture).removeQueueItem(request.mediaItem.toPlugin());
+      (await handlerFuture).removeQueueItem(
+          await artProviderBinding.convertForDart(request.mediaItem));
 
   @override
   Future<void> removeQueueItemAt(RemoveQueueItemAtRequest request) async =>
@@ -3835,10 +3840,8 @@ class _HandlerCallbacks extends AudioHandlerCallbacks {
 
   @override
   Future<SearchResponse> search(SearchRequest request) async => SearchResponse(
-      mediaItems:
-          (await (await handlerFuture).search(request.query, request.extras))
-              .map((item) => item._toMessage())
-              .toList());
+      mediaItems: await artProviderBinding.convertListForPlatform(
+          await (await handlerFuture).search(request.query, request.extras)));
 
   @override
   Future<void> seek(SeekRequest request) async =>
@@ -3930,5 +3933,351 @@ class AudioServiceWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return child;
+  }
+}
+
+/// A helper to load artworks and convert media item art URIs
+/// sent to, or received from platform.
+///
+/// If [AndroidArtContentProvider] is [available], it will:
+///  * convert art URIs to content URIs when sending them to platform
+///  * convert content URIs to art URIs when receiving from platform
+///  * load arts from the content provider isolate
+///
+/// Otherwise will not do any URI conversion and will load
+/// artworks from the main isolate.
+class _ArtProviderBinding {
+  _ArtProviderBinding(BaseCacheManager cacheManager) {
+    _artLoader = _ArtLoader(cacheManager);
+    if (kIsWeb || !Platform.isAndroid) {
+      _sendPort = null;
+    } else {
+      final port = IsolateNameServer.lookupPortByName(
+          AndroidArtContentProvider._portName);
+      _sendPort = port;
+    }
+  }
+
+  /// A loader to be used if [available] is `false`.
+  late final _ArtLoader? _artLoader;
+
+  late final SendPort? _sendPort;
+
+  /// Whether the loader is running in the separate isolate, i.e.
+  /// we are on Android and there's a [AndroidArtContentProvider] we can reach.
+  bool get available => _sendPort != null;
+
+  Future<T> _send<T>(String method, [List<dynamic>? arguments]) async {
+    assert(available);
+    final receivePort = ReceivePort();
+    _sendPort!.send(_IsolateRequest(receivePort.sendPort, method, arguments));
+    final dynamic result = await receivePort.first;
+    receivePort.close();
+    return result as T;
+  }
+
+  /// Prepares the item to be sent to platform, but doesn't convert it to
+  /// message yet.
+  ///
+  /// To convert to message, see [convertForPlatform].
+  ///
+  /// Converts art URI to content URI.
+  Future<MediaItem> prepareForPlatform(MediaItem mediaItem) async {
+    final artUri = mediaItem.artUri;
+    if (available && artUri != null) {
+      final contentUri =
+          await _send<Uri>('_convertToContentUri', <dynamic>[artUri]);
+      return mediaItem.copyWith(artUri: contentUri);
+    }
+    return mediaItem;
+  }
+
+  /// Converts art URI to content URI.
+  Future<MediaItemMessage> convertForPlatform(MediaItem mediaItem) async {
+    final platformMediaItem = await prepareForPlatform(mediaItem);
+    return platformMediaItem._toMessage();
+  }
+
+  /// Converts all non-null art URIs to content URIs.
+  Future<List<MediaItemMessage>> convertListForPlatform(
+    List<MediaItem> mediaItems,
+  ) async {
+    if (!available) {
+      return mediaItems.map((mediaItem) => mediaItem._toMessage()).toList();
+    }
+    final indexes = <int>[];
+    final artUris = <Uri>[];
+    final mediaItemMessages = <MediaItemMessage>[];
+    for (int i = 0; i < mediaItems.length; i++) {
+      final uri = mediaItems[i].artUri;
+      if (uri != null) {
+        indexes.add(i);
+        artUris.add(uri);
+        mediaItemMessages.add(const MediaItemMessage(id: '', title: ''));
+      } else {
+        mediaItemMessages.add(mediaItems[i]._toMessage());
+      }
+    }
+    if (artUris.isNotEmpty) {
+      final contentUris =
+          await _send<List<Uri>>('_convertToContentUris', <dynamic>[artUris]);
+      assert(indexes.length == contentUris.length);
+      for (int i = 0; i < contentUris.length; i++) {
+        mediaItemMessages[indexes[i]] =
+            mediaItems[indexes[i]]._toMessage(artUri: contentUris[i]);
+      }
+    }
+    return mediaItemMessages;
+  }
+
+  /// Converts URI from content to an actual art URI.
+  Future<MediaItem> convertForDart(MediaItemMessage mediaItem) async {
+    final artUri = mediaItem.artUri;
+    if (available && artUri != null) {
+      final uri = await _send<Uri>('_convertFromContentUri', <dynamic>[artUri]);
+      return mediaItem.toPlugin(artUri: uri);
+    }
+    return mediaItem.toPlugin();
+  }
+
+  /// Converts all non-null URIs from content to actual art URIs.
+  Future<List<MediaItem>> convertListForDart(
+    List<MediaItemMessage> mediaItemMessages,
+  ) async {
+    if (!available) {
+      return mediaItemMessages
+          .map((mediaItem) => mediaItem.toPlugin())
+          .toList();
+    }
+    final indexes = <int>[];
+    final artUris = <Uri?>[];
+    final mediaItems = <MediaItem>[];
+    for (int i = 0; i < mediaItems.length; i++) {
+      final uri = mediaItems[i].artUri;
+      if (uri != null) {
+        indexes.add(i);
+        artUris.add(uri);
+        mediaItems.add(const MediaItem(id: '', title: ''));
+      } else {
+        mediaItems.add(mediaItemMessages[i].toPlugin());
+      }
+    }
+    if (artUris.isNotEmpty) {
+      final uris = await _send<List<Uri?>>(
+          '_convertFromContentUris', <dynamic>[artUris]);
+      assert(indexes.length == uris.length);
+      for (int i = 0; i < uris.length; i++) {
+        mediaItems[indexes[i]] =
+            mediaItemMessages[indexes[i]].toPlugin(artUri: uris[i]);
+      }
+    }
+    return mediaItems;
+  }
+
+  /// Tries to get the artwork from memory, using the actual art URI.
+  Future<String?> loadArtworkFromMemory(Uri uri) {
+    if (!available) {
+      return _artLoader!.loadArtworkFromMemory(uri);
+    }
+    return _send('_loadArtworkFromMemory', <dynamic>[uri]);
+  }
+
+  /// Loads the artwork using the actual art URI.
+  Future<String?> loadArtwork(Uri uri, Map<String, String>? headers) {
+    if (!available) {
+      return _artLoader!.loadArtwork(uri, headers);
+    }
+    return _send('_loadArtwork', <dynamic>[uri, headers]);
+  }
+}
+
+class _ArtLoader {
+  _ArtLoader(this.cacheManager);
+  final BaseCacheManager cacheManager;
+
+  /// Tries to get the artwork from memory, using the actual art URI.
+  Future<String?> loadArtworkFromMemory(Uri uri) async {
+    final fileInfo = await cacheManager.getFileFromMemory(uri.toString());
+    return fileInfo?.file.path;
+  }
+
+  /// Loads the artwork using the actual art URI.
+  Future<String?> loadArtwork(Uri uri, Map<String, String>? headers) async {
+    try {
+      if (uri.scheme == 'file') {
+        return uri.toFilePath();
+      } else {
+        final file = headers != null
+            ? await cacheManager.getSingleFile(uri.toString(), headers: headers)
+            : await cacheManager.getSingleFile(uri.toString());
+        return file.path;
+      }
+    } catch (e, st) {
+      // TODO: handle this somehow?
+      // ignore: avoid_print
+      print('Error loading artUri: $e\n$st');
+    }
+    return null;
+  }
+}
+
+/// An Android `ContentProvider` to allow other apps to access artworks,
+/// loaded by [AudioService] from [MediaItem.artUri].
+///
+/// It's not required to use this class for [AudioService] to function,
+/// but it is recommended
+class AndroidArtContentProvider extends AndroidContentProvider {
+  /// Creates [AndroidArtContentProvider].
+  AndroidArtContentProvider({
+    required String authority,
+    BaseCacheManager? cacheManager,
+  })  : _artLoader = _ArtLoader(cacheManager ?? DefaultCacheManager()),
+        _receivePort = ReceivePort(),
+        super(authority) {
+    _receivePort.listen((dynamic message) async {
+      final request = message as _IsolateRequest;
+      switch (request.method) {
+        case '_convertToContentUri':
+          request.sendPort.send(
+            _convertToContentUri(request.arguments![0] as Uri),
+          );
+          break;
+        case '_convertToContentUris':
+          final uris = request.arguments![0] as List<Uri>;
+          for (int i = 0; i < uris.length; i++) {
+            uris[i] = _convertToContentUri(uris[i]);
+          }
+          request.sendPort.send(uris);
+          break;
+        case '_convertFromContentUri':
+          request.sendPort.send(
+            _convertFromContentUri(request.arguments![0] as Uri),
+          );
+          break;
+        case '_convertFromContentUris':
+          final uris = request.arguments![0] as List<Uri?>;
+          for (int i = 0; i < uris.length; i++) {
+            uris[i] = _convertFromContentUri(uris[i]!);
+          }
+          request.sendPort.send(uris);
+          break;
+        case '_loadArtworkFromMemory':
+          request.sendPort.send(
+            await _artLoader
+                .loadArtworkFromMemory(request.arguments![0] as Uri),
+          );
+          break;
+        case '_loadArtwork':
+          request.sendPort.send(
+            await _artLoader.loadArtwork(
+              request.arguments![0] as Uri,
+              request.arguments![1] as Map<String, String>?,
+            ),
+          );
+          break;
+      }
+    });
+    IsolateNameServer.removePortNameMapping(_portName);
+    final success = IsolateNameServer.registerPortWithName(
+        _receivePort.sendPort, _portName);
+    if (!success) {
+      throw StateError(
+          'Multiple art content providers were registered, which is not supported.');
+    }
+  }
+
+  final _ArtLoader _artLoader;
+  final ReceivePort _receivePort;
+
+  static const _portName =
+      'com.ryanheise.audioservice.art_content_provider_port';
+
+  /// The mapping of `content://` URIs to actual files URIs.
+  static final Map<Uri, Uri> _artUriMap = {};
+
+  /// Saves the mapping of actual art URI to content URI.
+  Uri _convertToContentUri(Uri uri) {
+    String path;
+    if (uri.path.isEmpty) {
+      path = '/';
+    } else {
+      path = uri.path.substring(1) +
+          '/' +
+          uri.queryParametersAll.entries
+              .map((el) => '${el.key}_${el.value.join('_')}')
+              .join('/');
+    }
+    final contentUri = Uri(
+      scheme: 'content',
+      host: authority,
+      path: path,
+    );
+    _artUriMap[contentUri] = uri;
+    return contentUri;
+  }
+
+  /// Returns the file URI from content URI, previously converted with
+  /// [_convertToContentUri].
+  Uri? _convertFromContentUri(Uri contentUri) {
+    if (contentUri.scheme != 'content') {
+      if (kDebugMode) {
+        debugPrint("Wrong art URI scheme. URI: $contentUri");
+      }
+      return null;
+    }
+    return _artUriMap[contentUri];
+  }
+
+  @override
+  Future<String?> openFile(String uri, String mode) async {
+    // Convert to actual file URI and try to load it.
+    var fileUri = _convertFromContentUri(Uri.parse(uri));
+    if (fileUri != null) {
+      var cacheFilePath = await _artLoader.loadArtworkFromMemory(fileUri);
+      cacheFilePath ??= await _artLoader.loadArtwork(fileUri, null);
+      return cacheFilePath;
+    } else {
+      return null;
+    }
+  }
+
+  @override
+  Future<int> delete(
+    String uri,
+    String? selection,
+    List<String>? selectionArgs,
+  ) async {
+    return 0;
+  }
+
+  @override
+  Future<String?> getType(String uri) async {
+    return null;
+  }
+
+  @override
+  Future<String?> insert(String uri, ContentValues? values) async {
+    return null;
+  }
+
+  @override
+  Future<CursorData?> query(
+    String uri,
+    List<String>? projection,
+    String? selection,
+    List<String>? selectionArgs,
+    String? sortOrder,
+  ) async {
+    return null;
+  }
+
+  @override
+  Future<int> update(
+    String uri,
+    ContentValues? values,
+    String? selection,
+    List<String>? selectionArgs,
+  ) async {
+    return 0;
   }
 }

@@ -50,5 +50,16 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc"/>
+
+        <meta-data android:name="com.google.android.gms.car.notification.SmallIcon"
+            android:resource="@mipmap/ic_launcher" />
+
+        <provider
+            android:name=".ArtContentProvider"
+            android:authorities="com.ryanheise.audioserviceexample.art_content_provider"
+            android:exported="true" />
     </application>
 </manifest>
