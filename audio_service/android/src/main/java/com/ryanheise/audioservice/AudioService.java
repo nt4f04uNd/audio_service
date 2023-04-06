@@ -330,7 +330,11 @@ public class AudioService extends MediaBrowserServiceCompat {
             intent.setComponent(new ComponentName(context, config.activityClassName));
             //Intent intent = new Intent(context, config.activityClassName);
             intent.setAction(NOTIFICATION_CLICK_ACTION);
-            contentIntent = PendingIntent.getActivity(context, REQUEST_CONTENT_INTENT, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 23) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            contentIntent = PendingIntent.getActivity(context, REQUEST_CONTENT_INTENT, intent, flags);
         } else {
             contentIntent = null;
         }
@@ -463,8 +467,11 @@ public class AudioService extends MediaBrowserServiceCompat {
 
     private PendingIntent buildPendingNotificationIntent(int actionIndex) {
         Intent intent = new Intent(notificationAction).putExtra("index", actionIndex);
-        return PendingIntent.getBroadcast(
-                AudioService.instance, actionIndex, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        return PendingIntent.getBroadcast(AudioService.instance, actionIndex, intent, flags);
     }
 
     public static class NotificationControl {
