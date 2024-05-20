@@ -46,6 +46,7 @@ import androidx.media.app.NotificationCompat.MediaStyle;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -153,7 +154,7 @@ public class AudioService extends MediaBrowserServiceCompat {
                         bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
                     }
                     retriever.release();
-                } catch (IllegalArgumentException ex) {
+                } catch (IllegalArgumentException | IOException ex) {
                     ex.printStackTrace();
                     // Catch when the content by specified path doesn't exist
                 }
@@ -364,7 +365,11 @@ public class AudioService extends MediaBrowserServiceCompat {
         notificationAction = packageName + ".notification_action";
         IntentFilter filter = new IntentFilter();
         filter.addAction(notificationAction);
-        registerReceiver(notificationReceiver, filter);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(notificationReceiver, filter, RECEIVER_EXPORTED);
+        }else {
+            registerReceiver(notificationReceiver, filter);
+        }
 
         PowerManager pm = (PowerManager)getSystemService(Context.POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, AudioService.class.getName());
