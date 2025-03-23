@@ -1,3 +1,150 @@
+## 0.18.18
+
+* Fix setPlaybackState entitlement issue on iOS.
+
+## 0.18.17
+
+* Add support for SwiftPM.
+
+## 0.18.16
+
+* Support MPNowPlayingInfoPropertyIsLiveStream on IOS (@MuradSh, @celsoft).
+
+## 0.18.15
+
+* Add deep link support for FlutterFragmentActivity (@jan-milovanovic).
+* Fix JDK 21 compile error.
+
+## 0.18.14
+
+* Support rxdart 0.28.x.
+
+## 0.18.13
+
+* Fix Android NPE in sendNotificationClicked and onConnected.
+* Catch and broadcast async platform exceptions.
+* Support js '>=0.6.3 <0.8.0'
+* Fix setAndroidPlaybackInfo call blocking (@julianscheel).
+* Pass through missing extras to playFrom.../prepareFrom... (@Ruchit2759).
+
+## 0.18.12
+
+* Fix crash with Oppo/OnePlus devices running Android 13.
+
+## 0.18.11
+
+* Support custom media controls (@defsub)
+* Support fast forward, rewind and stop when targeting Android 13 (@defsub)
+
+## 0.18.10
+
+* Add support for AGP 8 (@theskyblockman).
+* Update AGP to 7.3.0.
+* Update minimum flutter version to 3.0.
+
+## 0.18.9
+
+* Fix cache bug in AudioServiceFragmentActivity (@Mordtimer).
+* Add Android Auto manifest entry for example app (@ColinSchmale).
+
+## 0.18.8
+
+* Improve efficiency of mediaItem updates (@nt4f04uNd).
+
+## 0.18.7
+
+* Fix stopForeground bug on Android SDK < 24.
+* Migrate to androidx.media 1.6.0 (@snipd-mikel)
+* Propagate MediaItem extras to Android Auto (@snipd-mikel)
+* Update progress bar in Android Auto (@snipd-mikel)
+
+## 0.18.6
+
+* Fix build when targeting Android 13.
+* Add MediaItem.artHeaders.
+
+## 0.18.5
+
+* Add AudioServiceFragmentActivity (@deimantasa).
+* Support `content://` art URIs in notification on Android (@nt4f04uNd).
+* Document Android foregroundServiceType.
+
+## 0.18.4
+
+* Fix Android FlutterJNI error after quick relaunch. 
+* Fix Android NPE when destroying additional FlutterEngines.
+
+## 0.18.3
+
+* Fix build when targeting Android 12.
+
+## 0.18.2
+
+* Guard against NPE when Android service is destroyed quickly.
+* Migrate to flutter_lints.
+* Queue messages from platform if init() called late.
+* Fix deep linking on Android (@vishna/@ryanheise).
+
+## 0.18.1
+
+* Remove iOS notification on stop.
+* Fix setSpeed action on iOS.
+* Eliminate redundant notification updates on Android.
+* Handle null album and artist on web (@nt4f04uNd).
+* Fix multithreaded crash in notification tap (@nt4f04uNd).
+* Fix regression to show album art on lock screen (@nt4f04uNd).
+* Add playlist/shuffle/loop example.
+
+## 0.18.0
+
+* Use a single isolate for easier communication.
+* Replace BackgroundAudioTask by AudioHandler.
+* Replace AudioService.start by AudioService.init.
+* Android Auto support.
+* Android 11 media session resumption support.
+* Federated plugin model.
+* Composable audio handlers (@yringler).
+* More callbacks:
+  * prepareFromSearch
+  * prepareFromUri
+  * playFromSearch
+  * playFromUri
+  * addQueueItems
+  * removeQueueItemAt
+  * setCaptioningEnabled
+  * getMediaItem
+  * search
+  * androidSetRemoteVolume
+  * androidAdjustRemoteVolume
+* More state:
+  * queueTitle
+  * ratingStyle
+  * androidPlaybackInfo
+  * customState
+* Default platform implementation for Windows/Linux (@keaganhilliard)
+* iOS/macOS control center bug fixes (@nt4f04uNd)
+* Fix queue index out of bounds bug (@kcrebound)
+* Fix bug when starting foreground service from background (@chengyuhui)
+* Make MediaItem.album nullable (@letiagoalves)
+* Code quality:
+  * Unit tests (@suragch, @nt4f04uNd)
+  * Strong-mode and pedantic lints, code consistency (@nt4f04uNd)
+* Improve artUri performance on Android (@nt4f04uNd)
+* Better detection of browser support (@nt4f04uNd)
+
+## 0.17.1
+
+* Support rxdart 0.27.0.
+
+## 0.17.0
+
+* Null safety.
+* Change artUri type from String to Uri.
+
+## 0.16.2+1
+
+* Mention upcoming 0.18.0 release in README.
+
 ## 0.16.2
 
 * Fix positionStream bug when seek is interrupted by onStop.
