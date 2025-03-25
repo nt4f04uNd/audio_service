@@ -1,6 +1,6 @@
 # audio_service
 
-This plugin wraps around your existing audio code to allow it to run in the background or with the screen turned off, and allows your app to interact with headset buttons, the Android lock screen and notification, iOS control center, wearables and Android Auto. It is suitable for:
+This plugin wraps around your existing audio code to allow it to run in the background and interact with the media notification, the lock screen, headset buttons, wearables and Android Auto. It supports Android, iOS, web and Linux (via [audio_service_mpris](https://pub.dev/packages/audio_service_mpris)). It is suitable for:
 
 * Music players
 * Text-to-speech readers
@@ -11,22 +11,21 @@ This plugin wraps around your existing audio code to allow it to run in the back
 
 ## How does this plugin work?
 
-You encapsulate your audio code in an audio handler which implements standard callbacks on Android, iOS and the web that allow it to respond to playback requests coming from your Flutter UI, headset buttons, the lock screen, notification, iOS control center, car displays and smart watches, even when the app is in the background:
+You encapsulate your audio code in an audio handler which implements a set of standard system callbacks to handle media playback requests from different sources in a uniform way:
 
 ![audio_handler](https://user-images.githubusercontent.com/19899190/100403242-762e7480-30b2-11eb-9fcf-938e08beee53.png)
 
-You can implement these callbacks to play any sort of audio that is appropriate for your app, such as music files or streams, audio assets, text to speech, synthesised audio, or combinations of these.
+You implement these callbacks to play the particular type of audio that your app needs to play in response to these requests. For example, a Text-to-speech reader app might implement these callbacks using [flutter_tts](https://pub.dartlang.org/packages/flutter_tts) to render the speech, while a music player app might implement these callbacks using [just_audio](https://pub.dartlang.org/packages/just_audio) to render the audio.
 
 | Feature                            | Android   | iOS     | macOS   | Web     |
 | -------                            | :-------: | :-----: | :-----: | :-----: |
 | background audio                   | ✅        | ✅      | ✅      | ✅      |
 | headset clicks                     | ✅        | ✅      | ✅      | ✅      |
-| start/stop/play/pause/seek/rate    | ✅        | ✅      | ✅      | ✅      |
+| play/pause/seek/rate/stop          | ✅        | ✅      | ✅      | ✅      |
 | fast forward/rewind                | ✅        | ✅      | ✅      | ✅      |
 | repeat/shuffle mode                | ✅        | ✅      | ✅      | ✅      |
 | queue manipulation, skip next/prev | ✅        | ✅      | ✅      | ✅      |
-| custom actions                     | ✅        | ✅      | ✅      | ✅      |
-| custom events                      | ✅        | ✅      | ✅      | ✅      |
+| custom actions/events/states       | ✅        | ✅      | ✅      | ✅      |
 | notifications/control center       | ✅        | ✅      | ✅      | ✅      |
 | lock screen controls               | ✅        | ✅      |         | ✅      |
 | album art                          | ✅        | ✅      | ✅      | ✅      |
@@ -34,37 +33,17 @@ You can implement these callbacks to play any sort of audio that is appropriate 
 
 If you'd like to help with any missing features, please join us on the [GitHub issues page](https://github.com/ryanheise/audio_service/issues).
 
-## What's new in 0.18.0?
+## Tutorials and documentation
 
-0.18.0 removes the need for a background isolate, allowing simpler communication between your UI and audio logic and greater compatibility with plugins that don't support multiple isolates.
-
-NOTE: This branch is not yet released and currently undergoing testing. APIs should be considered unstable and may undergo changes before the branch is released. If you want to help test it and provide feedback, use the following pubspec dependency:
-
-```yaml
-dependencies:
-  audio_service:
-    git: 
-      url: https://github.com/ryanheise/audio_service.git
-      ref: one-isolate
-```
-
-Basic migration steps:
-
-1. On Android, update your app's activity class as per the "Android setup" section of this README.
-2. Call `AudioService.init()` in your app's `main()` as per the example below, passing any configuration options and callbacks you previously passed into `AudioService.start()`.
-4. Remove any call to `AudioService.start()`. The media notification should now show automatically on the first time you call `play()`.
-5. Remove your corresponding implementation of `onStart()` and move any initialisation code into the constructor or other callbacks as appropriate.
-6. If you use `customAction/onCustomAction`, the second argument is now required to be a `Map`.
-
-Optional (recommended) step:
-
-7. `BackgroundAudioTask` is deprecated and replaced by `AudioHandler`, a new composable and mixable API allowing functionality from multiple audio handlers to be combined. To migrate, change your base class from `BackgroundAudioTask` to `BaseAudioHandler` and remove the `on` prefix from each method name (e.g. rename `onPlay` to `play`).
-
-Read the [Migration Guide](https://github.com/ryanheise/audio_service/wiki/Migration-Guide#0140) for more details (TODO!).
+* [Background audio in Flutter with Audio Service and Just Audio](https://suragch.medium.com/background-audio-in-flutter-with-audio-service-and-just-audio-3cce17b4a7d?sk=0837a1b1773e27a4f879ff3072e90305) by @suragch
+* [Tutorial](https://github.com/ryanheise/audio_service/wiki/Tutorial): walks you through building a simple audio player while explaining the basic concepts.
+* [Full example](https://github.com/ryanheise/audio_service): The `example` subdirectory on GitHub demonstrates both music and text-to-speech use cases.
+* [Frequently Asked Questions](https://github.com/ryanheise/audio_service/wiki/FAQ)
+* [API documentation](https://pub.dev/documentation/audio_service/latest/audio_service/audio_service-library.html)
 
 ## Can I make use of other plugins within the audio handler?
 
-Yes! `audio_service` is designed to let you implement the audio logic however you want, using whatever plugins you want. You can use your favourite audio plugins such as [just_audio](https://pub.dartlang.org/packages/just_audio), [flutter_radio](https://pub.dev/packages/flutter_radio), [flutter_tts](https://pub.dartlang.org/packages/flutter_tts), and others, within your background audio task.
+Yes! `audio_service` is designed to let you implement the audio logic however you want, using whatever plugins you want. You can use your favourite audio plugins such as [just_audio](https://pub.dartlang.org/packages/just_audio), [flutter_tts](https://pub.dartlang.org/packages/flutter_tts), and others, within your audio handler. There are also plugins like [just_audio_handlers](https://github.com/yringler/inside-app/tree/master/just_audio_handlers) that provide default implementations of `AudioHandler` to make your job easier.
 
 Note that this plugin will not work with other audio plugins that overlap in responsibility with this plugin (i.e. background audio, iOS control center, Android notifications, lock screen, headset buttons, etc.)
 
@@ -72,79 +51,80 @@ Note that this plugin will not work with other audio plugins that overlap in res
 
 ### Initialisation
 
-Define your `AudioHandler` callbacks:
+Define your `AudioHandler` with the callbacks that you want your app to handle:
 
 ```dart
 class MyAudioHandler extends BaseAudioHandler
-    with QueueHandler, // mix in default implementations of queue functionality
-    SeekHandler { // mix in default implementations of seek functionality
-  final _player = AudioPlayer();
+    with QueueHandler, // mix in default queue callback implementations
+    SeekHandler { // mix in default seek callback implementations
+
+  final _player = AudioPlayer(); // e.g. just_audio
   
-  play() => _player.play();
-  pause() => _player.pause();
-  seekTo(Duration position) => _player.seek(position);
-  stop() async {
-    await _player.stop();
-    await super.stop();
-  }
-  
-  customAction(String name, Map<String, dynamic> arguments) async {
-    switch (name) {
-      case 'setVolume':
-        _player.setVolume(arguments['volume']);
-        break;
-      case 'saveBookmark':
-        // app-specific code
-        break;
-    }
-  }
+  // The most common callbacks:
+  Future<void> play() => _player.play();
+  Future<void> pause() => _player.pause();
+  Future<void> stop() => _player.stop();
+  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> skipToQueueItem(int i) => _player.seek(Duration.zero, index: i);
 }
 ```
 
 Register your `AudioHandler` during app startup:
 
 ```dart
-main() async {
+Future<void> main() async {
   // store this in a singleton
   _audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: AudioServiceConfig(
-      androidNotificationChannelName: 'My Audio App',
-      androidEnableQueue: true,
+      androidNotificationChannelId: 'com.mycompany.myapp.channel.audio',
+      androidNotificationChannelName: 'Music playback',
     ),
   );
   runApp(new MyApp());
 }
 ```
 
-### Controls
+### Sending requests to the audio handler from Flutter
 
 Standard controls:
 
 ```dart
 _audioHandler.play();
-_audioHandler.seekTo(Duration(seconds: 10));
+_audioHandler.seek(Duration(seconds: 10));
 _audioHandler.setSpeed(1.5);
 _audioHandler.pause();
 _audioHandler.stop();
 ```
 
-Queue management:
+Playing specific media items:
 
 ```dart
 var item = MediaItem(
   id: 'https://example.com/audio.mp3',
   album: 'Album name',
   title: 'Track title',
+  artist: 'Artist name',
+  duration: const Duration(milliseconds: 123456),
+  artUri: Uri.parse('https://example.com/album.jpg'),
 );
+
+_audioHandler.playMediaItem(item);
+_audioHandler.playFromSearch(queryString);
+_audioHandler.playFromUri(uri);
+_audioHandler.playFromMediaId(id);
+```
+
+Queue management:
+
+```dart
 _audioHandler.addQueueItem(item);
 _audioHandler.insertQueueItem(1, item);
 _audioHandler.removeQueueItem(item);
 _audioHandler.updateQueue([item, ...]);
 _audioHandler.skipToNext();
 _audioHandler.skipToPrevious();
-_audioHandler.playFromMediaId('https://example.com/audio.mp3')
-_audioHandler.playMediaItem(item);
+_audioHandler.skipToQueueItem(2);
 ```
 
 Looping and shuffling:
@@ -161,48 +141,92 @@ _audioHandler.customAction('setVolume', {'volume': 0.8});
 _audioHandler.customAction('saveBookmark');
 ```
 
-### State
+### Broadcasting state changes
 
-Emit state changes from the `AudioHandler`:
+Your audio handler must broadcast state changes so that the system notification and smart watches (etc) know what state to display. Your app's Flutter UI may also listen to these state changes so that it knows what state to display. Thus, the audio handler provides a single source of truth for your audio state to all clients.
+
+Broadcast the current media item:
 
 ```dart
 class MyAudioHandler extends BaseAudioHandler ... {
-  MyAudioHandler() {
-    // Broadcast which item is currently playing
-    _player.currentIndexStream.listen((index) => mediaItem.add(queue[index]));
-    // Broadcast the current playback state and what controls should currently
-    // be visible in the media notification
-    _player.playbackEventStream.listen((event) {
-      playbackState.add(playbackState.value.copyWith(
-        controls: [
-	  MediaControl.skipToPrevious,
-	  playing ? MediaControl.pause : MediaControl.play,
-	  MediaControl.skipToNext,
-	],
-	androidCompactActionIndices: [0, 1, 3],
-	systemActions: {
-	  MediaAction.seekTo,
-	  MediaAction.seekForward,
-	  MediaAction.seekBackward,
-	},
-	processingState: {
-          ProcessingState.none: AudioProcessingState.idle,
-          ProcessingState.loading: AudioProcessingState.loading,
-          ProcessingState.buffering: AudioProcessingState.buffering,
-          ProcessingState.ready: AudioProcessingState.ready,
-          ProcessingState.completed: AudioProcessingState.completed,
-	}[_player.processingState],
-	playing: player.playing,
-	updatePosition: player.position,
-	bufferedPosition: player.bufferedPosition,
-	speed: player.speed,
-      ));
-    });
-  }
-}
+    ...
+    mediaItem.add(item1);
+    ...
 ```
 
-Listen to playback state changes from the UI:
+Broadcast the current queue:
+
+```dart
+  ...
+  queue.add(<MediaItem>[item1, item2, item3]);
+  ...
+```
+
+Broadcast the current playback state:
+
+```dart
+    ...
+    // All options shown:
+    playbackState.add(PlaybackState(
+      // Which buttons should appear in the notification now
+      controls: [
+        MediaControl.skipToPrevious,
+        MediaControl.pause,
+        MediaControl.stop,
+        MediaControl.skipToNext,
+      ],
+      // Which other actions should be enabled in the notification
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      // Which controls to show in Android's compact view.
+      androidCompactActionIndices: const [0, 1, 3],
+      // Whether audio is ready, buffering, ...
+      processingState: AudioProcessingState.ready,
+      // Whether audio is playing
+      playing: true,
+      // The current position as of this update. You should not broadcast
+      // position changes continuously because listeners will be able to
+      // project the current position after any elapsed time based on the
+      // current speed and whether audio is playing and ready. Instead, only
+      // broadcast position updates when they are different from expected (e.g.
+      // buffering, or seeking).
+      updatePosition: Duration(milliseconds: 54321),
+      // The current buffered position as of this update
+      bufferedPosition: Duration(milliseconds: 65432),
+      // The current speed
+      speed: 1.0,
+      // The current queue position
+      queueIndex: 0,
+    ));
+```
+
+Broadcasting mutations of the current playback state using `copyWith`:
+
+```dart
+    playbackState.add(playbackState.value.copyWith(
+      // Keep all existing state the same with only the speed changed:
+      speed: newSpeed,
+    ));
+```
+
+### Listening to state changes
+
+Listen to changes to the currently playing item from the Flutter UI:
+
+```dart
+_audioHandler.mediaItem.listen((MediaItem item) { ... });
+```
+
+Listen to changes to the queue from the Flutter UI:
+
+```dart
+_audioHandler.queue.listen((List<MediaItem> queue) { ... });
+```
+
+Listen to playback state changes from the Flutter UI:
 
 ```dart
 _audioHandler.playbackState.listen((PlaybackState state) {
@@ -218,66 +242,41 @@ _audioHandler.playbackState.listen((PlaybackState state) {
 });
 ```
 
-Listen to changes to the currently playing item:
-
-```dart
-_audioHandler.mediaItem.listen((MediaItem item) { ... });
-```
-
-Listen to changes to the queue:
-
-```dart
-_audioHandler.queue.listen((List<MediaItem> queue) { ... });
-```
-
-Listen to continuous changes to the current playback position:
+Listen to a stream of continuous changes to the current playback position:
 
 ```dart
 AudioService.position.listen((Duration position) { ... });
 ```
 
-## Text-to-speech example
+### Advanced features
 
-If you are instead building a text-to-speech reader, you could implement these callbacks differently:
+Compose multiple audio handler classes:
 
 ```dart
-import 'package:flutter_tts/flutter_tts.dart';
-class TtsAudioHandler extends BaseAudioHandler {
-  final _tts = FlutterTts();
-  MediaItem _item;
-  playMediaItem(MediaItem item) async {
-    _item = item;
-    // Tell clients what we're listening to
-    await mediaItem.add(item);
-    // Tell clients that we're now playing
-    playbackState.add(playbackState.value.copyWith(
-      playing: true,
-      processingState: AudioProcessingState.ready,
-      controls: [MediaControl.stop],
-    ));
-    // Play a small amount of silent audio on Android to pose as an audio player
-    AudioService.androidForceEnableMediaButtons();
-    // Start speaking
-    _tts.speak(item.extras['text']);
-  }
-  
-  play() {
-    if (_item != null) playMediaItem(_item);
-  }
-  
-  stop() async {
-    await _tts.stop();
-    playbackState.add(playbackState.value.copyWith(
-      playing: false,
-      processingState: AudioProcessingState.idle,
-      controls: [MediaControl.play],
-    ));
-    await super.stop();
-  }
-}
+_audioHandler = await AudioService.init(
+  builder: () => AnalyticsAudioHandler(
+    PersistingAudioHandler(
+      MyAudioHandler())),
+);
 ```
 
-See the full example for how to handle queues/playlists, headset button clicks and media artwork.
+Connecting from another isolate:
+
+```dart
+// Wrap audio handler in IsolatedAudioHandler:
+_audioHandler = await AudioService.init(
+  builder: () => IsolatedAudioHandler(
+    MyAudioHandler(),
+    portName: 'my_audio_handler',
+  ),
+);
+// From another isolate, obtain a proxy reference:
+_proxyAudioHandler = await IsolatedAudioHandler.lookup(
+  portName: 'my_audio_handler',
+);
+```
+
+See the full example for how to handle queues/playlists, headset button clicks, media artwork and text to speech.
 
 ## Configuring the audio session
 
@@ -307,17 +306,15 @@ Note: If your app uses a number of different audio plugins, e.g. for audio recor
 
 ## Android setup
 
-These instructions assume that your project follows the new project template introduced in Flutter 1.12. If your project was created prior to 1.12 and uses the old project structure, you can update your project to follow the [new project template](https://github.com/flutter/flutter/wiki/Upgrading-pre-1.12-Android-projects).
-
-Additionally:
-
 1. Make the following changes to your project's `AndroidManifest.xml` file:
 
 ```xml
-<manifest ...>
+<manifest xmlns:tools="http://schemas.android.com/tools" ...>
   <!-- ADD THESE TWO PERMISSIONS -->
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <!-- ALSO ADD THIS PERMISSION IF TARGETING SDK 34 -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
   
   <application ...>
     
@@ -329,14 +326,17 @@ Additionally:
     </activity>
     
     <!-- ADD THIS "SERVICE" element -->
-    <service android:name="com.ryanheise.audioservice.AudioService">
+    <service android:name="com.ryanheise.audioservice.AudioService"
+        android:foregroundServiceType="mediaPlayback"
+        android:exported="true" tools:ignore="Instantiatable">
       <intent-filter>
         <action android:name="android.media.browse.MediaBrowserService" />
       </intent-filter>
     </service>
 
     <!-- ADD THIS "RECEIVER" element -->
-    <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" >
+    <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+        android:exported="true" tools:ignore="Instantiatable">
       <intent-filter>
         <action android:name="android.intent.action.MEDIA_BUTTON" />
       </intent-filter>
@@ -344,6 +344,8 @@ Additionally:
   </application>
 </manifest>
 ```
+
+Note: As of Android 12, an app must have permission to restart a foreground service in the background, otherwise a `ForegroundServiceStartNotAllowedException` will be thrown. To avoid such an exception, you can either set `androidStopForegroundOnPause` to `false` in your `AudioServiceConfig` which keeps the service in the foreground during a pause so that restarting the foreground service is unnecessary, or you can keep the default `androidStopForegroundOnPause` setting of `true` (in line with best practices) and request the user to turn of battery optimisation for your app via the [optimize_battery](https://pub.dev/packages/optimize_battery) package. For more information, read [this page](https://developer.android.com/training/monitoring-device-state/doze-standby#support_for_other_use_cases).
 
 2. If you use any custom icons in notification, create the file `android/app/src/main/res/raw/keep.xml` to prevent them from being stripped during the build process:
 
@@ -353,7 +355,7 @@ Additionally:
   tools:keep="@drawable/*" />
 ```
 
-By default plugin's default icons are not stipped by R8. If you don't use them, you may selectively strip them. For example, the rules below will keep all your icons and discard all the plugin's:
+By default plugin's default icons are not stripped by R8. If you don't use them, you may selectively strip them. For example, the rules below will keep all your icons and discard all the plugin's:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -365,45 +367,59 @@ By default plugin's default icons are not stipped by R8. If you don't use them, 
 
 For more information about shrinking see [Android documentation](https://developer.android.com/studio/build/shrink-code#keep-resources).
 
+
 ### Custom Android activity
 
-If your app uses a custom activity, you will need to override `provideFlutterEngine` as follows to ensure that your activity and service use the same shared Flutter engine:
+If your app needs to use its own custom activity, make sure you update your `AndroidManifest.xml` file to reference your activity's class name instead of `AudioServiceActivity`. For example, if your activity class is named `MainActivity`, then use:
+
+```xml
+    <activity android:name=".MainActivity" ...>
+```
+
+Depending on whether you activity is a regular `Activity` or a `FragmentActivity`, you must also include some code to link to audio_service's shared `FlutterEngine`. The easiest way to accomplish this is to inherit that code from one of audio_service's provided base classes.
+
+1. Integration as an `Activity`:
 
 ```java
-public class CustomActivity extends FlutterActivity {
-  @Override
-  public FlutterEngine provideFlutterEngine(Context context) {
-    return AudioServicePlugin.getFlutterEngine(context);
-  }
+import com.ryanheise.audioservice.AudioServiceActivity;
+
+class MainActivity extends AudioServiceActivity {
+    // ...
 }
 ```
 
-Alternatively, you can make your custom activity a subclass of `AudioServiceActivity` and thereby inherit its implementation of `provideFlutterEngine`.
+2. Integration as a `FragmentActivity`:
+
+```java
+import com.ryanheise.audioservice.AudioServiceFragmentActivity;
+
+class MainActivity extends AudioServiceFragmentActivity {
+    // ...
+}
+```
+
+You can also write your own activity class from scratch, and override the `provideFlutterEngine`, `getCachedEngineId` and `shouldDestroyEngineWithHost` methods yourself. For inspiration, see the source code of the provided `AudioServiceActivity` and `AudioServiceFragmentActivity` classes.
 
 ## iOS setup
 
 Insert this in your `Info.plist` file:
 
 ```
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-	</array>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>audio</string>
+  </array>
 ```
 
 The example project may be consulted for context.
 
+Note that the `audio` background mode permits an app to run in the background only for the purpose of playing audio. The OS may kill your process if it sits idly without playing audio, for example, by using a timer to sleep for a few seconds. If your app needs to pause for a few seconds between audio tracks, consider playing a silent audio track to create that effect rather than using an idle timer.
+
 ## macOS setup
+
 The minimum supported macOS version is 10.12.2 (though this could be changed with some work in the future).  
 Modify the platform line in `macos/Podfile` to look like the following:
 
 ```
 platform :osx, '10.12.2'
 ```
-
-# Where can I find more information?
-
-* [Tutorial](https://github.com/ryanheise/audio_service/wiki/Tutorial): walks you through building a simple audio player while explaining the basic concepts.
-* [Full example](https://github.com/ryanheise/audio_service/blob/master/example/lib/main.dart): The `example` subdirectory on GitHub demonstrates both music and text-to-speech use cases.
-* [Frequently Asked Questions](https://github.com/ryanheise/audio_service/wiki/FAQ)
-* [API documentation](https://pub.dev/documentation/audio_service/latest/audio_service/audio_service-library.html)
