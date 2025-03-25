@@ -1,17 +1,10 @@
+plugins {
+    id "com.android.library"
+}
+
 group 'com.ryanheise.audioservice'
 version '1.0-SNAPSHOT'
 def args = ["-Xlint:deprecation","-Xlint:unchecked"]
-
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-
-    dependencies {
-        classpath 'com.android.tools.build:gradle:7.3.0'
-    }
-}
 
 rootProject.allprojects {
     repositories {
@@ -23,8 +16,6 @@ rootProject.allprojects {
 project.getTasks().withType(JavaCompile) {
     options.compilerArgs.addAll(args)
 }
-
-apply plugin: 'com.android.library'
 
 android {
     // Conditional for compatibility with AGP <4.2.
